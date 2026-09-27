@@ -1,0 +1,31 @@
+{
+  "name": "Журнал учителя",
+  "short_name": "Журнал",
+  "lang": "ru",
+  "description": "Расписание пар, план недели, классы, дела и копилка приёмов.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef1ef",
+  "theme_color": "#2f7d6b",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

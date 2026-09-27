@@ -1,0 +1,5 @@
+# Личное: имя учителя и списки учеников — только на устройстве того, кто собирает
+src/private.json
+src/rosters.private.js
+src/out/
+node_modules/
