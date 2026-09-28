@@ -424,6 +424,22 @@
   #syncChip[data-s="offline"] { color: var(--ink-faint); }
   #syncChip[data-s="auth"], #syncChip[data-s="error"] { color: var(--accent); border-color: var(--accent); }
 
+  /* ---------- числитель / знаменатель ---------- */
+  .altbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px;
+    font-size: 13.5px; color: var(--ink-soft); }
+  .altbar b { color: var(--ink); }
+  .wk { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 20px; border: 1px solid var(--now); color: var(--now); background: var(--now-soft); }
+  .wk.z { border-color: var(--warm); color: var(--warm); background: var(--warm-soft); }
+  td.cell.split { padding: 3px; }
+  .halves { display: flex; flex-direction: column; gap: 3px; height: 100%; }
+  .halves .slot { flex: 1; padding: 5px 8px; min-height: 0; position: relative; }
+  .halves .slot.empty { opacity: .6; font-size: 12px; justify-content: flex-start; gap: 6px; }
+  .slot .hl { font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); margin-right: 5px; }
+  .slot.cur .hl { color: var(--now); }
+  .slot.other { opacity: .5; }
+  .weekbar .wk { margin-left: 2px; }
+
   @media (prefers-reduced-motion: reduce) { * { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; } }
   @media print {
     .toolbar, .hint, .tabs, .nowbar, .foot, .weekbar button, .helper, .clschips { display: none; }
@@ -570,6 +586,11 @@
 
   <!-- ===== расписание ===== -->
   <section class="view" id="view-grid" role="tabpanel" aria-labelledby="tab-grid">
+    <div class="altbar">
+      <span>Эта неделя — <span class="wk" id="altNow">числитель</span></span>
+      <button type="button" class="mini" id="altFlip">Поменять</button>
+      <span style="font-size:12.5px">Пару можно поставить на каждую неделю или только на числитель / знаменатель.</span>
+    </div>
     <div class="board">
       <table id="grid" aria-label="Расписание пар по дням недели">
         <thead><tr id="head"></tr></thead>
@@ -691,6 +712,12 @@
       <label class="field"><span>Кабинет</span><input type="text" id="fRoom" autocomplete="off" placeholder="220"></label>
     </div>
     <label class="field"><span>Постоянная заметка</span><input type="text" id="fNote" autocomplete="off" placeholder="Подгруппа, вытяжка…"></label>
+    <label class="field"><span>Какие недели</span>
+      <div class="seg" id="fWeeks">
+        <input type="radio" name="wks" id="wk-all" value="" checked><label for="wk-all">Каждую неделю</label>
+        <input type="radio" name="wks" id="wk-ch" value="ч"><label for="wk-ch">Числитель</label>
+        <input type="radio" name="wks" id="wk-zn" value="з"><label for="wk-zn">Знаменатель</label>
+      </div></label>
     <label class="field" style="margin-bottom:4px"><span>Цвет предмета</span><div class="tags-pick" id="tagsPick"></div></label>
     <div class="dlg-foot">
       <button type="button" id="lsDel" class="danger">Удалить</button>
@@ -828,6 +855,7 @@
       <div class="hb">
         <h4>Расписание <em>Колба</em></h4>
         <p>Ваша <b>постоянная</b> сетка: пять дней и четыре пары. Нажмите на клетку — поменяете предмет, класс или кабинет. На пустой клетке появляется «+» — это добавить пару.</p>
+        <p><b>Числитель и знаменатель.</b> В окне пары выберите «каждую неделю», «числитель» или «знаменатель» — в одной клетке могут стоять две разные пары. Над расписанием видно, какая сейчас неделя; если в школе считают наоборот — нажмите «Поменять».</p>
         <p>Сетка одна на все недели, каждую неделю её заполнять не надо. Время звонков уже вписано: пары начинаются в <b>8:00, 9:40, 11:25 и 13:05</b>.</p>
       </div>
     </div>
@@ -1118,6 +1146,58 @@
   /* ==================== расписание ==================== */
   var head = $("head"), gridBody = $("gridBody");
 
+  /* --- числитель / знаменатель --- */
+  // Точка отсчёта: понедельник известной недели и её тип. По умолчанию
+  // первая неделя сентября — числитель. Хранится в профиле и синхронизируется.
+  function altAnchor() {
+    return profile.altMon || "2026-08-31";
+  }
+  function weekType(date) {
+    var base = profile.altType || "ч";
+    var weeks = Math.round(daysBetween(altAnchor(), iso(mondayOf(date))) / 7);
+    var odd = ((weeks % 2) + 2) % 2 === 1;
+    return odd ? (base === "ч" ? "з" : "ч") : base;
+  }
+  function wkName(t) { return t === "з" ? "знаменатель" : "числитель"; }
+  // Какая пара в этот день недели и эту пару — с учётом типа недели.
+  function lessonAt(c, r, date) {
+    var k = c + "-" + r;
+    return data.cells[k] || data.cells[k + ":" + weekType(date || new Date())] || null;
+  }
+  function renderAltBar() {
+    var t = weekType(new Date());
+    $("altNow").textContent = wkName(t);
+    $("altNow").className = "wk" + (t === "з" ? " z" : "");
+  }
+  $("altFlip").addEventListener("click", function () {
+    var t = weekType(new Date());
+    profile.altMon = iso(mondayOf(new Date()));
+    profile.altType = (t === "ч") ? "з" : "ч";
+    saveProfile(); renderAltBar(); renderGrid(); renderWeek(); renderNow();
+    showToast("Эта неделя теперь — " + wkName(profile.altType) + ". Остальные пересчитаны.", 4000, "#m-ham");
+  });
+
+  function slotBtn(item, c, r, half, cur) {
+    var btn = document.createElement("button");
+    var lbl = half ? "<span class='hl'>" + (half === "ч" ? "Числ." : "Знам.") + "</span>" : "";
+    if (item) {
+      btn.className = "slot filled" + (half ? (cur ? " cur" : " other") : "");
+      btn.style.setProperty("--tag", item.color || COLORS[0]);
+      var meta = [];
+      if (item.cls) meta.push("<span>" + esc(item.cls) + "</span>");
+      if (item.room) meta.push("<span class='room'>№" + esc(item.room) + "</span>");
+      btn.innerHTML = "<span class='subj'>" + lbl + esc(item.subj) + "</span>" +
+        (meta.length ? "<span class='meta'>" + meta.join("") + "</span>" : "");
+      btn.title = item.note || item.subj;
+    } else {
+      btn.className = "slot empty";
+      btn.innerHTML = half ? lbl + "+" : "+";
+      btn.setAttribute("aria-label", "Добавить: " + DAYS_SHORT[c] + ", " + (r + 1) + " пара" + (half ? ", " + wkName(half) : ""));
+    }
+    btn.addEventListener("click", function () { openLesson(c, r, half); });
+    return btn;
+  }
+
   function renderGrid() {
     var tc = todayCol();
     head.innerHTML = "";
@@ -1142,23 +1222,17 @@
       DAYS.forEach(function (d, c) {
         var td = document.createElement("td");
         td.className = "cell" + (c === tc ? " col-today" : "");
-        var item = data.cells[c + "-" + r];
-        var btn = document.createElement("button");
-        if (item) {
-          btn.className = "slot filled";
-          btn.style.setProperty("--tag", item.color || COLORS[0]);
-          var meta = [];
-          if (item.cls) meta.push("<span>" + esc(item.cls) + "</span>");
-          if (item.room) meta.push("<span class='room'>№" + esc(item.room) + "</span>");
-          btn.innerHTML = "<span class='subj'>" + esc(item.subj) + "</span>" +
-            (meta.length ? "<span class='meta'>" + meta.join("") + "</span>" : "");
-          btn.title = item.note || item.subj;
+        var k = c + "-" + r, all = data.cells[k], ch = data.cells[k + ":ч"], zn = data.cells[k + ":з"];
+        if (!all && (ch || zn)) {
+          var cur = weekType(new Date()), box = document.createElement("div");
+          box.className = "halves"; td.classList.add("split");
+          box.appendChild(slotBtn(ch, c, r, "ч", cur === "ч"));
+          box.appendChild(slotBtn(zn, c, r, "з", cur === "з"));
+          td.appendChild(box);
         } else {
-          btn.className = "slot empty"; btn.textContent = "+";
-          btn.setAttribute("aria-label", "Добавить: " + DAYS_SHORT[c] + ", " + (r + 1) + " пара");
+          td.appendChild(slotBtn(all, c, r, "", false));
         }
-        btn.addEventListener("click", function () { openLesson(c, r); });
-        td.appendChild(btn); tr.appendChild(td);
+        tr.appendChild(td);
       });
       gridBody.appendChild(tr);
     });
@@ -1175,9 +1249,11 @@
     tagsPick.appendChild(input); tagsPick.appendChild(label);
   });
 
-  function openLesson(c, r) {
-    editing = { c:c, r:r };
-    var item = data.cells[c + "-" + r];
+  function openLesson(c, r, half) {
+    half = half || "";
+    editing = { c:c, r:r, key: c + "-" + r + (half ? ":" + half : "") };
+    var item = data.cells[editing.key];
+    segSet("fWeeks", half);
     $("lsTitle").textContent = item ? "Изменить пару" : "Новая пара";
     $("lsWhere").textContent = DAYS_SHORT[c] + " · " + (r + 1) + " пара · " + pairStart(r);
     fSubj.value = item ? item.subj : DEFAULT_SUBJ;
@@ -1198,16 +1274,22 @@
     if (!editing) return;
     var subj = fSubj.value.trim(); if (!subj) return;
     var checked = tagsPick.querySelector("input:checked");
-    data.cells[editing.c + "-" + editing.r] = {
+    var base = editing.c + "-" + editing.r, wk = segGet("fWeeks");
+    var newKey = base + (wk ? ":" + wk : "");
+    if (newKey !== editing.key) delete data.cells[editing.key];
+    // «каждую неделю» заменяет обе половины; половина заменяет «каждую неделю»
+    if (!wk) { delete data.cells[base + ":ч"]; delete data.cells[base + ":з"]; }
+    else delete data.cells[base];
+    data.cells[newKey] = {
       subj: subj, cls: fClass.value.trim(), room: fRoom.value.trim(),
       note: fNote.value.trim(), color: checked ? checked.value : COLORS[0]
     };
     data.seeded = false; saveSched();
-    renderGrid(); renderNow(); dlgLesson.close(); editing = null;
+    renderGrid(); renderWeek(); renderNow(); dlgLesson.close(); editing = null;
   });
   $("lsDel").addEventListener("click", function () {
     if (!editing) return;
-    delete data.cells[editing.c + "-" + editing.r];
+    delete data.cells[editing.key];
     data.seeded = false; saveSched();
     renderGrid(); renderNow(); dlgLesson.close(); editing = null;
   });
@@ -1222,7 +1304,8 @@
   }
 
   function renderWeek() {
-    $("wLabel").textContent = weekLabel();
+    var wt = weekType(weekStart);
+    $("wLabel").innerHTML = esc(weekLabel()) + " <span class='wk" + (wt === "з" ? " z" : "") + "'>" + wkName(wt) + "</span>";
     weekGrid.innerHTML = "";
     var today = new Date(), total = 0, done = 0;
 
@@ -1236,7 +1319,7 @@
 
       var any = false;
       PERIODS.forEach(function (p, r) {
-        var lesson = data.cells[c + "-" + r];
+        var lesson = lessonAt(c, r, date);
         if (!lesson) return;
         any = true;
         var pl = plans[planKey(date, r)] || {};
@@ -1314,7 +1397,7 @@
 
   function openPlan(date, c, r) {
     planCtx = { date:date, c:c, r:r };
-    var lesson = data.cells[c + "-" + r] || {};
+    var lesson = lessonAt(c, r, date) || {};
     var pl = plans[planKey(date, r)] || {};
     $("plTitle").textContent = lesson.cls || "План пары";
     $("plWhere").innerHTML = DAYS_SHORT[c] + ", " + date.getDate() + " " + MON_SH[date.getMonth()] +
@@ -1388,12 +1471,12 @@
   // «этому классу на всю неделю»
   $("plSpread").addEventListener("click", function () {
     if (!planCtx) return;
-    var lesson = data.cells[planCtx.c + "-" + planCtx.r];
+    var lesson = lessonAt(planCtx.c, planCtx.r, planCtx.date);
     if (!lesson || !lesson.cls) { showToast("У этой пары не указан класс.", 3000, "#m-ham"); return; }
     var entry = collectPlan(), targets = [];
     DAYS.forEach(function (d, c) {
       PERIODS.forEach(function (p, r) {
-        var l = data.cells[c + "-" + r];
+        var l = lessonAt(c, r, addDays(weekStart, c));
         if (!l || l.cls !== lesson.cls) return;
         if (c === planCtx.c && r === planCtx.r) return;
         targets.push({ c:c, r:r, date: addDays(weekStart, c) });
@@ -1741,7 +1824,7 @@
       var parts = k.split("|"), dateStr = parts[0], r = +parts[1];
       var d = new Date(dateStr + "T00:00:00"), g = d.getDay();
       var c = (g === 0 || g === 6) ? -1 : g - 1;
-      var lesson = c >= 0 ? data.cells[c + "-" + r] : null;
+      var lesson = c >= 0 ? lessonAt(c, r, d) : null;
       items.push({ date: dateStr, d: d, r: r, pl: pl, lesson: lesson });
     });
     items.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
@@ -1767,7 +1850,7 @@
     }
     var upcoming = null, running = null;
     for (var r = 0; r < PERIODS.length; r++) {
-      var lesson = data.cells[col + "-" + r];
+      var lesson = lessonAt(col, r, now);
       if (!lesson) continue;
       var pl = plans[planKey(now, r)] || {};
       if (pl.status === "off") continue;
@@ -1976,7 +2059,7 @@
   function pairsToday() {
     var c = todayCol(); if (c < 0) return 0;
     var n = 0;
-    for (var r = 0; r < PERIODS.length; r++) if (data.cells[c + "-" + r]) n++;
+    for (var r = 0; r < PERIODS.length; r++) if (lessonAt(c, r, new Date())) n++;
     return n;
   }
   function badToday() {
@@ -2197,7 +2280,7 @@
     if (firedDay !== dayId) { fired = {}; firedDay = dayId; }
     if (col < 0) return;
     for (var r = 0; r < PERIODS.length; r++) {
-      var item = data.cells[col + "-" + r]; if (!item) continue;
+      var item = lessonAt(col, r, now); if (!item) continue;
       var pl = plans[planKey(now, r)] || {}; if (pl.status === "off") continue;
       var start = hhmmToDate(pairStart(r), now);
       var diff = (start - now) / 60000, fkey = dayId + "|" + r;
@@ -2230,19 +2313,23 @@
     lines.push("BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Raspisanie//RU", "CALSCALE:GREGORIAN");
     DAYS.forEach(function (d, c) {
       PERIODS.forEach(function (p, r) {
-        var l = data.cells[c + "-" + r]; if (!l) return;
+      ["", ":ч", ":з"].forEach(function (suf) {
+        var l = data.cells[c + "-" + r + suf]; if (!l) return;
         var date = addDays(mon, c);
+        // половину ставим с ближайшей недели нужного типа и повторяем раз в две недели
+        if (suf && weekType(date) !== suf.slice(1)) date = addDays(date, 7);
         var title = l.subj + (l.cls ? " · " + l.cls : "");
         lines.push("BEGIN:VEVENT");
-        lines.push("UID:pair-" + c + "-" + r + "-" + date.getTime() + "@raspisanie");
+        lines.push("UID:pair-" + c + "-" + r + (suf ? (suf === ":ч" ? "-ch" : "-zn") : "") + "-" + date.getTime() + "@raspisanie");
         lines.push("DTSTART:" + icsTime(date, pairStart(r)));
         lines.push("DTEND:" + icsTime(date, pairEnd(r)));
-        lines.push("RRULE:FREQ=WEEKLY;BYDAY=" + BYDAY[c]);
+        lines.push("RRULE:FREQ=WEEKLY;" + (suf ? "INTERVAL=2;" : "") + "BYDAY=" + BYDAY[c]);
         lines.push("SUMMARY:" + title.replace(/[,;]/g, " "));
         if (l.room) lines.push("LOCATION:кабинет " + l.room.replace(/[,;]/g, " "));
         lines.push("BEGIN:VALARM", "TRIGGER:-PT5M", "ACTION:DISPLAY",
                    "DESCRIPTION:Через 5 минут: " + title.replace(/[,;]/g, " "), "END:VALARM");
         lines.push("END:VEVENT");
+      });
       });
     });
     lines.push("END:VCALENDAR");
@@ -2290,11 +2377,11 @@
       sched: data, plans: plans, tasks: tasks, classes: classes, profile: profile, soul: soul };
   }
   function rerenderAll() {
-    renderWho(); renderGrid(); renderWeek(); renderClasses(); renderTasks(); renderJar(); renderNow();
+    renderWho(); renderAltBar(); renderGrid(); renderWeek(); renderClasses(); renderTasks(); renderJar(); renderNow();
   }
   function applyImport(parsed) {
     data = parsed.sched; plans = parsed.plans || {}; tasks = parsed.tasks || []; classes = parsed.classes || {};
-    if (parsed.profile) profile = { name: parsed.profile.name || "", nick: parsed.profile.nick || "" };
+    if (parsed.profile) profile = parsed.profile;
     if (parsed.soul) soul = mergeSoul(soul, parsed.soul);
     write(KEY, data); write(PKEY, plans); write(TKEY, tasks); write(CKEY, classes);
     write(FKEY, profile); write(SKEY, soul);
@@ -2399,8 +2486,7 @@
       f["n|" + cls] = JSON.stringify(rec.note || "");
       (rec.students || []).forEach(function (st) { f["s|" + cls + "|" + st.id] = JSON.stringify(st); });
     });
-    f["f|name"] = JSON.stringify(profile.name || "");
-    f["f|nick"] = JSON.stringify(profile.nick || "");
+    Object.keys(profile).forEach(function (k) { f["f|" + k] = JSON.stringify(profile[k] == null ? "" : profile[k]); });
     return f;
   }
   function unflatten(f) {
@@ -2499,7 +2585,7 @@
   function applyMerged(m, remoteSoul) {
     var u = unflatten(m.flat);
     data.cells = u.cells; plans = u.plans; tasks = u.tasks; classes = u.classes;
-    profile = { name: u.profile.name || "", nick: u.profile.nick || "" };
+    profile = u.profile;
     soul = mergeSoul(soul, remoteSoul);
     meta = m;
     var dup = dedupeStudents();
@@ -2783,7 +2869,7 @@
 
   /* ==================== старт ==================== */
   takeToken();
-  renderWho(); renderGrid(); renderWeek(); renderTasks(); renderNow(); showPhrase();
+  renderWho(); renderAltBar(); renderGrid(); renderWeek(); renderTasks(); renderNow(); showPhrase();
   paintSeason(); checkAch();
   setTimeout(checkSupport, 3000);
 

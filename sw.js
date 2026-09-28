@@ -1,5 +1,5 @@
 // Офлайн-кэш «Журнала учителя». При каждом выпуске меняется номер версии.
-const CACHE = "zhurnal-v4";
+const CACHE = "zhurnal-v5";
 const FONTS = "zhurnal-fonts";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png", "./apple-touch-icon.png"];
