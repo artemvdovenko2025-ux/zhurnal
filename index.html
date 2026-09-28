@@ -2514,14 +2514,23 @@
   function yfetch(url, opts) {
     opts = opts || {};
     opts.headers = { Authorization: "OAuth " + ysync.token };
-    return fetch(url, opts);
+    return tfetch(url, opts);
+  }
+  // Сетевая ошибка без подробностей («Failed to fetch») — подписываем, к какому
+  // адресу шёл запрос, чтобы было видно, какой этап не пускает браузер.
+  function tfetch(url, opts) {
+    return fetch(url, opts).catch(function (e) {
+      var host = ""; try { host = new URL(url).hostname; } catch (x) {}
+      var m = (opts && opts.method || "GET") + " " + host + url.replace(/^https:\/\/[^\/]+/, "").split("?")[0];
+      var err = new Error("нет связи: " + m); err.net = true; throw err;
+    });
   }
   function pull() {
     return yfetch(YAPI + "/download?path=" + encodeURIComponent(YFILE)).then(function (r) {
       if (r.status === 404) return null;
       if (!r.ok) throw yerr(r.status, "ссылка на чтение");
       return r.json().then(function (j) {
-        return fetch(j.href).then(function (f) {
+        return tfetch(j.href).then(function (f) {
           if (!f.ok) throw yerr(f.status, "чтение");
           return f.json();
         });
@@ -2539,7 +2548,7 @@
       if (!r.ok) throw yerr(r.status, "ссылка на запись");
       return r.json();
     }).then(function (j) {
-      return fetch(j.href, { method: "PUT", body: JSON.stringify(doc) });
+      return tfetch(j.href, { method: "PUT", body: JSON.stringify(doc) });
     }).then(function (u) {
       if (!(u.ok || u.status === 201 || u.status === 202)) throw yerr(u.status, "запись");
     });
