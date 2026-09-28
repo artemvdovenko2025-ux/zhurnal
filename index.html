@@ -2513,7 +2513,7 @@
   function yerr(status, where) { var e = new Error(where + ": " + status); e.status = status; return e; }
   function yfetch(url, opts) {
     opts = opts || {};
-    opts.headers = { Authorization: "OAuth " + ysync.token };
+    var h = opts.headers || {}; h.Authorization = "OAuth " + ysync.token; opts.headers = h;
     return tfetch(url, opts);
   }
   // Сетевая ошибка без подробностей («Failed to fetch») — подписываем, к какому
@@ -2525,32 +2525,94 @@
       var err = new Error("нет связи: " + m); err.net = true; throw err;
     });
   }
+  // Читать сам файл браузеру Яндекс не даёт (сервер скачивания без CORS),
+  // поэтому данные храним ещё и в «пометках» файла (custom_properties):
+  // они читаются и пишутся через cloud-api, который браузер пускает.
+  // Данные сжимаются и режутся на куски. Файл пишется как резервная копия.
+  var CHUNK = 1000;
+  function toB64(bytes) {
+    var s = "", i;
+    for (i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+  function fromB64(b) {
+    var s = atob(b), u = new Uint8Array(s.length);
+    for (var i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+    return u;
+  }
+  function pack(text) {
+    if (typeof CompressionStream === "undefined")
+      return Promise.resolve("r" + toB64(new TextEncoder().encode(text)));
+    var cs = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+    return new Response(cs).arrayBuffer().then(function (buf) { return "g" + toB64(new Uint8Array(buf)); });
+  }
+  function unpack(str) {
+    var kind = str.charAt(0), bytes = fromB64(str.slice(1));
+    if (kind === "r") return Promise.resolve(new TextDecoder().decode(bytes));
+    var ds = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return new Response(ds).text();
+  }
+  var META_URL = YAPI + "?path=" + encodeURIComponent(YFILE);
+
   function pull() {
-    return yfetch(YAPI + "/download?path=" + encodeURIComponent(YFILE)).then(function (r) {
+    return yfetch(META_URL + "&fields=custom_properties").then(function (r) {
       if (r.status === 404) return null;
-      if (!r.ok) throw yerr(r.status, "ссылка на чтение");
+      if (!r.ok) throw yerr(r.status, "чтение пометок");
       return r.json().then(function (j) {
-        return tfetch(j.href).then(function (f) {
-          if (!f.ok) throw yerr(f.status, "чтение");
-          return f.json();
-        });
+        var cp = j.custom_properties || {}, n = +cp.n || 0;
+        if (!n) return null;
+        var parts = [];
+        for (var i = 0; i < n; i++) {
+          if (typeof cp["c" + i] !== "string") throw yerr("неполные данные", "чтение пометок");
+          parts.push(cp["c" + i]);
+        }
+        return unpack(parts.join("")).then(function (t) { return JSON.parse(t); });
       });
     });
   }
-  function push(doc) {
+  var lastChunks = 0;
+  function uploadFile(body) {
     var link = YAPI + "/upload?path=" + encodeURIComponent(YFILE) + "&overwrite=true";
     return yfetch(link).then(function (r) {
       if (r.status !== 409) return r;
-      // папки приложения ещё нет — создаём и просим ссылку ещё раз
       return yfetch(YAPI + "?path=" + encodeURIComponent("app:/"), { method: "PUT" })
         .then(function () { return yfetch(link); });
     }).then(function (r) {
       if (!r.ok) throw yerr(r.status, "ссылка на запись");
       return r.json();
     }).then(function (j) {
-      return tfetch(j.href, { method: "PUT", body: JSON.stringify(doc) });
+      return tfetch(j.href, { method: "PUT", body: body });
     }).then(function (u) {
-      if (!(u.ok || u.status === 201 || u.status === 202)) throw yerr(u.status, "запись");
+      if (!(u.ok || u.status === 201 || u.status === 202)) throw yerr(u.status, "запись файла");
+    });
+  }
+  function push(doc) {
+    var body = JSON.stringify(doc);
+    return uploadFile(body).then(function () {
+      return yfetch(META_URL + "&fields=custom_properties");
+    }).then(function (r) {
+      return r.ok ? r.json() : {};
+    }).then(function (j) {
+      var old = +((j.custom_properties || {}).n) || 0;
+      return pack(body).then(function (packed) {
+        var props = {}, n = Math.ceil(packed.length / CHUNK), i;
+        for (i = 0; i < n; i++) props["c" + i] = packed.slice(i * CHUNK, (i + 1) * CHUNK);
+        for (i = n; i < old; i++) props["c" + i] = null;
+        props.n = String(n);
+        lastChunks = n;
+        return yfetch(META_URL, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ custom_properties: props })
+        }).then(function (r) {
+          if (r.ok) return;
+          return r.text().then(function (t) {
+            var msg = "";
+            try { msg = JSON.parse(t).message || JSON.parse(t).description || ""; } catch (e) { msg = t.slice(0, 120); }
+            throw yerr(r.status + ", объём " + Math.round(packed.length / 1024) + " КБ" + (msg ? ": " + msg : ""), "запись пометок");
+          });
+        });
+      });
     });
   }
 
