@@ -666,7 +666,7 @@
       <svg fill="currentColor"><use href="#m-paw"></use></svg>
       <svg fill="currentColor"><use href="#m-paw"></use></svg>
     </span>
-    <span>Все данные хранятся только на этом устройстве</span>
+    <span><!--@IF:pwa-->Данные хранятся на этом устройстве и, если включена синхронизация, на вашем Яндекс.Диске<!--@ELSE-->Все данные хранятся только на этом устройстве<!--@END--></span>
   </div>
 </div>
 
@@ -1829,6 +1829,7 @@
   }
 
   /* ==================== «сейчас» ==================== */
+  function dur(m) { return m < 60 ? m + " мин" : Math.floor(m / 60) + " ч" + (m % 60 ? " " + (m % 60) + " мин" : ""); }
   function renderNow() {
     var now = new Date(), col = todayCol();
     var dot = $("nowDot"), lbl = $("nowLbl"), txt = $("nowTxt");
@@ -1853,7 +1854,7 @@
     } else if (upcoming) {
       dot.className = "dot"; lbl.textContent = "Следующая";
       txt.innerHTML = "Пара " + (upcoming.r + 1) + " в " + pairStart(upcoming.r) + " · " + esc(who(upcoming.lesson)) +
-        " <span class='mono'>· через " + Math.max(0, Math.round((upcoming.start - now) / 60000)) + " мин</span>";
+        " <span class='mono'>· через " + dur(Math.max(0, Math.round((upcoming.start - now) / 60000))) + "</span>";
     } else {
       dot.className = "dot idle"; lbl.textContent = "Сегодня"; txt.textContent = "Пары закончились";
     }
