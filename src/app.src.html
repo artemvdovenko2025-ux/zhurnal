@@ -427,6 +427,30 @@
   .slot.other { opacity: .5; }
   .weekbar .wk { margin-left: 2px; }
 
+  /* ---------- урок: отсутствующие, оценки, «кого спросить» ---------- */
+  .modebar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 2px 0 12px; }
+  .modebar .seg label { padding: 6px 13px; }
+  .modebar .spacer { flex: 1; }
+  .modebar input[type=date] { width: auto; padding: 6px 9px; font-size: 14px; }
+  .stud { flex-wrap: wrap; }
+  .stud .marks { display: flex; gap: 4px; margin-left: auto; }
+  .gbtn { min-width: 34px; min-height: 34px; padding: 4px 0; border-radius: 8px; font-family: "IBM Plex Mono", monospace;
+    font-size: 14px; font-weight: 600; background: var(--paper); }
+  .gbtn.on { background: var(--now); border-color: var(--now); color: #fff; }
+  :root[data-theme="dark"] .gbtn.on { color: #0e1a17; }
+  .gbtn.abs { margin-right: 6px; }
+  .gbtn.abs.on { background: var(--accent); border-color: var(--accent); }
+  .stud.absent .nm { text-decoration: line-through; opacity: .55; }
+  .lessonfoot { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px;
+    font-size: 13px; color: var(--ink-soft); }
+  .pick-card { text-align: center; padding: 26px 22px 18px; }
+  .pick-card svg { width: 96px; height: 96px; }
+  .pick-card svg.drum { animation: drum .18s ease-in-out infinite alternate; }
+  @keyframes drum { from { transform: translateY(0) rotate(-6deg); } to { transform: translateY(-6px) rotate(6deg); } }
+  .pick-name { font-family: "Fraunces", Georgia, serif; font-size: 27px; font-weight: 600; margin: 12px 0 4px;
+    min-height: 1.3em; text-wrap: balance; }
+  .pick-sub { font-size: 13px; color: var(--ink-faint); min-height: 1.4em; }
+
   @media (prefers-reduced-motion: reduce) { * { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; } }
   @media print {
     .toolbar, .hint, .tabs, .nowbar, .foot, .weekbar button, .helper, .clschips { display: none; }
@@ -813,6 +837,33 @@
   </div>
 </dialog>
 
+<!-- диалог: кого спросить -->
+<dialog id="dlgPick">
+  <div class="pick-card">
+    <svg aria-hidden="true" id="pickPet"><use href="#m-pup"></use></svg>
+    <div class="pick-name" id="pickName" aria-live="polite"></div>
+    <div class="pick-sub" id="pickSub"></div>
+    <div class="dlg-foot" style="justify-content:center">
+      <button type="button" id="pickAgain">Ещё раз</button>
+      <button type="button" id="pickAsk" class="primary">Спросила</button>
+    </div>
+    <button type="button" class="ghost cancel" style="margin-top:6px">Закрыть</button>
+  </div>
+</dialog>
+
+<!-- диалог: текст для журнала -->
+<dialog id="dlgJournal">
+  <div class="dlg-in">
+    <div class="dlg-head"><h2>Для электронного журнала</h2><span class="where" id="jrWhere"></span></div>
+    <textarea id="jrBox" readonly style="min-height:220px;font-family:'IBM Plex Mono',monospace;font-size:13px"></textarea>
+    <div class="dlg-foot">
+      <button type="button" id="jrCopy" class="primary">Скопировать</button>
+      <span class="spacer"></span>
+      <button type="button" class="cancel">Закрыть</button>
+    </div>
+  </div>
+</dialog>
+
 <!-- диалог: подтверждение -->
 <dialog id="dlgAsk">
   <div class="dlg-in">
@@ -867,6 +918,8 @@
         <p>Опечатка в фамилии? <b>Нажмите на имя</b> — откроется окошко, где можно поправить или удалить.</p>
         <p>Я подниму наверх тех, <b>кого давно не спрашивали</b>, а через две недели подсвечу красным. Оценки выйдут ровнее, и никто не потеряется. Ещё есть заметка про класс — кто с кем сидит, на что смотреть.</p>
         <p><b>Ошиблись — не страшно.</b> Сразу после отметки внизу появится кнопка «Отменить». А если заметили позже, у отмеченного сегодня ученика кнопка сама превращается в <b>«Отменить»</b> — нажмите, и вернётся прошлая дата.</p>
+        <p><b>🎲 Кого спросить?</b> — я побарабаню лапками и выберу ученика. Чаще выпадают те, кого давно не спрашивали, а отсутствующие сегодня — никогда.</p>
+        <p>Режим <b>«Урок: н и оценки»</b> — на паре отмечайте «н» и ставьте 2–5 одним касанием. Вечером кнопка <b>«Текст для журнала»</b> соберёт всё списком — останется перенести в электронный журнал.</p>
         <p>Крестик <b>✕</b> справа удаляет ученика, и тут же можно нажать <b>«Вернуть»</b>, если промахнулись.</p>
       </div>
     </div>
@@ -1502,6 +1555,14 @@
     return Object.keys(set).sort(function (a, b) { return a.localeCompare(b, "ru"); });
   }
 
+  var clsMode = "ask", lessonDate = null;
+  function mark(st, d) { return (st.marks && st.marks[d]) || {}; }
+  function setMark(st, d, m) {
+    st.marks = st.marks || {};
+    if (!m.a && !m.g) delete st.marks[d]; else st.marks[d] = m;
+  }
+  function shortName(n) { var p = n.split(" "); return p[0] + (p[1] ? " " + p[1].charAt(0) + "." : ""); }
+
   function renderClasses() {
     var list = classList(), chips = $("clsChips"), panel = $("clsPanel");
     chips.innerHTML = "";
@@ -1528,7 +1589,20 @@
       return a.last < b.last ? -1 : 1;
     });
 
-    var rows = studs.map(function (s) {
+    if (!lessonDate) lessonDate = todayIso;
+    if (clsMode === "lesson") {
+      studs = (rec.students || []).slice().sort(function (a, b) { return a.name.localeCompare(b.name, "ru"); });
+    }
+    var rows = clsMode === "lesson" ? studs.map(function (s) {
+      var m = mark(s, lessonDate), g = "";
+      [2, 3, 4, 5].forEach(function (v) {
+        g += "<button class='gbtn" + (m.g === String(v) ? " on" : "") + "' data-act='grade' data-g='" + v + "'" +
+          (m.a ? " disabled" : "") + ">" + v + "</button>";
+      });
+      return "<div class='stud" + (m.a ? " absent" : "") + "' data-id='" + esc(s.id) + "'>" +
+        "<button class='nm' data-act='edit'>" + esc(s.name) + "</button>" +
+        "<span class='marks'><button class='gbtn abs" + (m.a ? " on" : "") + "' data-act='abs' title='Отсутствует'>н</button>" + g + "</span></div>";
+    }).join("") : studs.map(function (s) {
       var askedToday = (s.last === todayIso);
       var stale = !s.last || daysBetween(s.last, todayIso) > 14;
       var ago = !s.last ? "ни разу" : (function () {
@@ -1562,7 +1636,18 @@
       "<input type='text' id='studName' placeholder='Фамилия и имя ученика' autocomplete='off' aria-label='Новый ученик' required>" +
       "<button type='submit' class='primary'>Добавить</button>" +
       "<button type='button' id='pasteBtn'>Списком</button></form>" +
+      (studs.length ? "<div class='modebar'><div class='seg' id='clsModeSeg'>" +
+        "<input type='radio' name='cm' id='cm-ask' value='ask'" + (clsMode === "ask" ? " checked" : "") + "><label for='cm-ask'>Опрос</label>" +
+        "<input type='radio' name='cm' id='cm-les' value='lesson'" + (clsMode === "lesson" ? " checked" : "") + "><label for='cm-les'>Урок: н и оценки</label></div>" +
+        (clsMode === "lesson" ? "<input type='date' id='lessonDate' value='" + lessonDate + "' aria-label='Дата урока'>" : "") +
+        "<span class='spacer'></span><button type='button' id='pickBtn'>🎲 Кого спросить?</button></div>" : "") +
       (rows || "<div class='empty-state'><svg aria-hidden='true'><use href='#m-zzz'></use></svg><p>Список пуст. Добавьте учеников — и увидите, кого давно не спрашивали.</p></div>") +
+      (clsMode === "lesson" && studs.length ? (function () {
+        var ab = 0, gr = 0;
+        studs.forEach(function (s) { var m = mark(s, lessonDate); if (m.a) ab++; if (m.g) gr++; });
+        return "<div class='lessonfoot'><span>Отсутствуют: " + ab + " · оценок: " + gr + "</span>" +
+          "<span class='spacer' style='flex:1'></span><button type='button' class='primary' id='jrBtn'>Текст для журнала</button></div>";
+      })() : "") +
       "</div>" +
       "<div class='card'><h3><svg aria-hidden='true'><use href='#m-cat'></use></svg>Заметка о классе</h3>" +
       "<textarea id='clsNote' placeholder='Особенности класса, кто с кем сидит, на что обратить внимание'>" + esc(rec.note || "") + "</textarea></div>";
@@ -1575,6 +1660,14 @@
       saveClasses(); renderClasses();
     });
     $("pasteBtn").addEventListener("click", function () { openPaste(selectedClass); });
+    panel.querySelectorAll("#clsModeSeg input").forEach(function (i) {
+      i.addEventListener("change", function () { clsMode = i.value; renderClasses(); });
+    });
+    if ($("lessonDate")) $("lessonDate").addEventListener("change", function () {
+      lessonDate = $("lessonDate").value || iso(new Date()); renderClasses();
+    });
+    if ($("pickBtn")) $("pickBtn").addEventListener("click", function () { openPick(selectedClass); });
+    if ($("jrBtn")) $("jrBtn").addEventListener("click", function () { openJournal(selectedClass, lessonDate); });
     $("clsNote").addEventListener("change", function () {
       if (!classes[selectedClass]) classes[selectedClass] = { note:"", students:[] };
       classes[selectedClass].note = $("clsNote").value;
@@ -1594,17 +1687,22 @@
           return;
         }
 
-        if (act === "ask") {
-          arr[i].prev = arr[i].last || "";
-          arr[i].last = iso(new Date());
-          var name = arr[i].name;
+        if (act === "abs" || act === "grade") {
+          var st = arr[i], m = mark(st, lessonDate);
+          if (act === "abs") m = m.a ? {} : { a: 1 };
+          else {
+            var g = b.getAttribute("data-g");
+            m = { g: m.g === g ? "" : g };
+            // оценка — значит, спрашивали в этот день
+            if (m.g && lessonDate > (st.last || "")) { st.prev = st.last || ""; st.last = lessonDate; }
+          }
+          setMark(st, lessonDate, m);
           saveClasses(); renderClasses();
-          var day = iso(new Date());
-          soul.asked[day] = (soul.asked[day] || 0) + 1; saveSoul();
-          if (soul.asked[day] === 5)
-            once("ask5:" + day, function () { addTreat("pup", "спросили пятерых за день"); });
-          showToast(name + " — отмечено на сегодня.", 7000, "#m-pup",
-            { label: "Отменить", fn: function () { undoAsk(cls, id); } });
+          return;
+        }
+
+        if (act === "ask") {
+          markAsked(cls, id);
 
         } else if (act === "undo") {
           undoAsk(cls, id);
@@ -1618,6 +1716,91 @@
       });
     });
   }
+
+  function markAsked(cls, id) {
+    var arr = (classes[cls] || {}).students || [];
+    var st = arr.find(function (s) { return s.id === id; });
+    if (!st) return;
+    st.prev = st.last || "";
+    st.last = iso(new Date());
+    saveClasses(); renderClasses();
+    var day = iso(new Date());
+    soul.asked[day] = (soul.asked[day] || 0) + 1; saveSoul();
+    if (soul.asked[day] === 5)
+      once("ask5:" + day, function () { addTreat("pup", "спросили пятерых за день"); });
+    showToast(esc(st.name) + " — отмечено на сегодня.", 7000, "#m-pup",
+      { label: "Отменить", fn: function () { undoAsk(cls, id); } });
+  }
+
+  /* --- кого спросить --- */
+  var dlgPick = $("dlgPick"), pickCtx = null, pickTimer = null;
+  function pickWeighted(cls, avoid) {
+    var today = iso(new Date());
+    var pool = ((classes[cls] || {}).students || []).filter(function (s) {
+      return !mark(s, today).a && s.last !== today && s.id !== avoid;
+    });
+    if (!pool.length) pool = ((classes[cls] || {}).students || []).filter(function (s) { return !mark(s, today).a; });
+    if (!pool.length) return null;
+    // давно не спрашивали — больше шансов; ни разу — самый большой вес
+    var w = pool.map(function (s) { return 1 + (s.last ? Math.min(daysBetween(s.last, today), 30) : 45); });
+    var sum = w.reduce(function (a, b) { return a + b; }, 0), r = Math.random() * sum;
+    for (var i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) return pool[i]; }
+    return pool[pool.length - 1];
+  }
+  function spin(cls) {
+    var all = ((classes[cls] || {}).students || []).filter(function (s) { return !mark(s, iso(new Date())).a; });
+    var winner = pickWeighted(cls, pickCtx && pickCtx.id);
+    var nameEl = $("pickName"), sub = $("pickSub"), pet = $("pickPet");
+    $("pickAsk").disabled = true; $("pickAgain").disabled = true;
+    if (!winner) { nameEl.textContent = "Некого спрашивать"; sub.textContent = "Все отсутствуют или список пуст"; return; }
+    pickCtx = { cls: cls, id: winner.id };
+    var steps = REDUCED ? 0 : 14, n = 0;
+    pet.classList.toggle("drum", steps > 0);
+    sub.textContent = "Тяпа барабанит лапками…";
+    clearTimeout(pickTimer);
+    (function tick() {
+      if (n < steps) {
+        nameEl.textContent = all[Math.floor(Math.random() * all.length)].name;
+        n++; pickTimer = setTimeout(tick, 55 + n * 12);
+        return;
+      }
+      pet.classList.remove("drum");
+      nameEl.textContent = winner.name;
+      var t = iso(new Date());
+      sub.textContent = winner.last ? "последний раз: " + (function (d) {
+        return d === 1 ? "вчера" : d + " дн. назад"; })(daysBetween(winner.last, t)) : "ещё ни разу не спрашивали";
+      $("pickAsk").disabled = false; $("pickAgain").disabled = false;
+    })();
+  }
+  function openPick(cls) { pickCtx = null; dlgPick.showModal(); spin(cls); }
+  $("pickAgain").addEventListener("click", function () { if (pickCtx) spin(pickCtx.cls); });
+  $("pickAsk").addEventListener("click", function () {
+    if (!pickCtx) return;
+    dlgPick.close(); markAsked(pickCtx.cls, pickCtx.id);
+  });
+  dlgPick.addEventListener("close", function () { clearTimeout(pickTimer); });
+
+  /* --- текст для журнала --- */
+  var dlgJournal = $("dlgJournal");
+  function openJournal(cls, d) {
+    var studs = ((classes[cls] || {}).students || []).slice().sort(function (a, b) { return a.name.localeCompare(b.name, "ru"); });
+    var dt = new Date(d + "T00:00:00");
+    var abs = [], gr = [];
+    studs.forEach(function (s) {
+      var m = mark(s, d);
+      if (m.a) abs.push(s.name);
+      if (m.g) gr.push(s.name + " — " + m.g);
+    });
+    var lines = [cls + " · " + dt.getDate() + " " + MONTHS[dt.getMonth()] + " " + dt.getFullYear(), ""];
+    lines.push("Отсутствовали (" + abs.length + "):");
+    lines.push(abs.length ? abs.join("\n") : "—");
+    lines.push("", "Оценки (" + gr.length + "):");
+    lines.push(gr.length ? gr.join("\n") : "—");
+    $("jrBox").value = lines.join("\n");
+    $("jrWhere").textContent = cls;
+    dlgJournal.showModal();
+  }
+  $("jrCopy").addEventListener("click", function () { copyFrom($("jrBox")); });
 
   // Снять сегодняшнюю отметку и вернуть ту дату, что была до неё.
   function undoAsk(cls, id) {
